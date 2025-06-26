@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Inventory Management with AI</title>
+   <script src="https://cdn.tailwindcss.com"></script>
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+   <style>
+       body {
+           font-family: 'Inter', sans-serif;
+       }
+       .tab-active {
+           border-bottom: 2px solid #3b82f6;
+           color: #3b82f6;
+           font-weight: 600;
+       }
+       .table-container {
+           max-height: 60vh;
+           overflow-y: auto;
+       }
+       .table-container::-webkit-scrollbar {
+           width: 8px;
+       }
+       .table-container::-webkit-scrollbar-track {
+           background: #f1f5f9;
+           border-radius: 10px;
+       }
+       .table-container::-webkit-scrollbar-thumb {
+           background: #94a3b8;
+           border-radius: 10px;
+       }
+       .table-container::-webkit-scrollbar-thumb:hover {
+           background: #64748b;
+       }
+       .modal-overlay {
+           position: fixed;
+           top: 0;
+           left: 0;
+           right: 0;
+           bottom: 0;
+           background: rgba(0, 0, 0, 0.5);
+           display: flex;
+           align-items: center;
+           justify-content: center;
+           z-index: 1000;
+           opacity: 0;
+           visibility: hidden;
+           transition: opacity 0.3s, visibility 0.3s;
+       }
+       .modal-overlay.visible {
+           opacity: 1;
+           visibility: visible;
+       }
+       .modal-content {
+           background: white;
+           padding: 2rem;
+           border-radius: 0.5rem;
+           max-width: 90%;
+           width: 600px;
+           max-height: 80vh;
+           overflow-y: auto;
+           transform: scale(0.95);
+           transition: transform 0.3s;
+       }
+       .modal-overlay.visible .modal-content {
+           transform: scale(1);
+       }
+       .loader {
+           border: 4px solid #f3f3f3;
+           border-top: 4px solid #3498db;
+           border-radius: 50%;
+           width: 40px;
+           height: 40px;
+           animation: spin 1s linear infinite;
+           margin: 2rem auto;
+       }
+       @keyframes spin {
+           0% { transform: rotate(0deg); }
+           100% { transform: rotate(360deg); }
+       }
+   </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+   <div class="container mx-auto p-4 md:p-8">
+       <h1 class="text-3xl font-bold mb-2 text-gray-900">Inventory Management System</h1>
+       <p class="text-gray-600 mb-6">Track stock across multiple stores, receive alerts, and ✨ generate reorder plans with AI.</p>
+
+       <!-- Safety Stock Alerts Section -->
+       <div id="alert-container" class="mb-6 space-y-2"></div>
+
+       <!-- Tab Navigation -->
+       <div class="mb-6 border-b border-gray-200">
+           <nav class="flex flex-wrap space-x-4 -mb-px" aria-label="Tabs">
+               <button onclick="changeTab('masterData')" class="tab-btn tab-active whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Master Data</button>
+               <button onclick="changeTab('centralStoreUpdate')" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300">Update Central Store</button>
+               <button onclick="changeTab('subStoreUpdate')" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300">Update Sub Store</button>
+               <button onclick="changeTab('subStoreByEquipment')" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300">Sub Store by Equipment</button>
+               <button onclick="changeTab('equipmentFilter')" class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300">Equipment View</button>
+           </nav>
+       </div>
+
+       <!-- App Sheets -->
+       <div id="app-content">
+           <!-- Sheet 1: Master Data -->
+           <div id="masterData" class="tab-content bg-white p-6 rounded-lg shadow-sm">
+               <h2 class="text-xl font-semibold mb-4">Master Data Sheet</h2>
+
+               <!-- Master Data Update Section -->
+               <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+                   <h3 class="text-lg font-medium mb-2">Update Master Data via Sheet</h3>
+                   <p class="text-sm text-gray-600 mb-4">Upload a spreadsheet (.xlsx, .csv) to add new materials or update existing ones. The sheet must have columns: 'Material Code', 'Description', 'Category', 'Equipment', and 'Safety Stock'.</p>
+                   <div id="update-status-master" class="mb-4 text-center"></div>
+                   <div class="flex items-center space-x-4">
+                       <input type="file" id="master-file-input" accept=".xlsx, .xls, .csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 flex-grow"/>
+                       <button onclick="handleMasterDataUpload()" class="inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                           Process Sheet
+                       </button>
+                   </div>
+               </div>
+
+               <div class="table-container">
+                   <table class="min-w-full divide-y divide-gray-200">
+                       <thead class="bg-gray-50 sticky top-0">
+                           <tr>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Material Code</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Equipment</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Safety Stock</th>
+                           </tr>
+                       </thead>
+                       <tbody id="master-data-body" class="bg-white divide-y divide-gray-200"></tbody>
+                   </table>
+               </div>
+           </div>
+
+           <!-- Sheet 2: Central Store Update -->
+           <div id="centralStoreUpdate" class="tab-content hidden bg-white p-6 rounded-lg shadow-sm">
+               <div id="update-container-central"></div>
+           </div>
+
+           <!-- Sheet 3: Sub Store Update -->
+           <div id="subStoreUpdate" class="tab-content hidden bg-white p-6 rounded-lg shadow-sm">
+               <div id="update-container-sub"></div>
+           </div>
+
+            <!-- Sheet 4: Sub Store by Equipment -->
+           <div id="subStoreByEquipment" class="tab-content hidden bg-white p-6 rounded-lg shadow-sm">
+                <h2 class="text-xl font-semibold mb-4">Update Sub Store Stock by Equipment</h2>
+                <div id="update-status-sub-equipment" class="mb-4 text-center"></div>
+               <div class="flex items-end space-x-4 mb-4">
+                   <div class="flex-grow">
+                       <label for="equipment-search-sub-update" class="block text-sm font-medium text-gray-700">Search Equipment</label>
+                       <input type="text" id="equipment-search-sub-update" oninput="handleSubStoreEquipmentSelect()" placeholder="Start typing to find equipment..." class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                   </div>
+                   <div>
+                       <label for="equipment-select-sub-update" class="block text-sm font-medium text-gray-700">Or Select</label>
+                       <select id="equipment-select-sub-update" onchange="selectEquipmentFromDropdown('sub-update')" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                           <!-- JS will populate this -->
+                       </select>
+                   </div>
+               </div>
+                <div class="table-container">
+                   <table class="min-w-full divide-y divide-gray-200">
+                       <thead class="bg-gray-50 sticky top-0">
+                           <tr>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Material Code</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Sub Store Qty</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">New Sub Store Qty</th>
+                           </tr>
+                       </thead>
+                       <tbody id="sub-update-table-body" class="bg-white divide-y divide-gray-200">
+                           <tr><td colspan="4" class="text-center py-4 text-gray-500">Search for or select an equipment to begin.</td></tr>
+                       </tbody>
+                   </table>
+               </div>
+               <div id="sub-update-button-container" class="mt-6 text-right hidden">
+                   <button onclick="updateSubStoreByEquipment()" class="inline-flex justify-center py-2 px-6 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Update All Changes</button>
+               </div>
+           </div>
+
+           <!-- Sheet 5: Equipment Filter -->
+           <div id="equipmentFilter" class="tab-content hidden bg-white p-6 rounded-lg shadow-sm">
+                <h2 class="text-xl font-semibold mb-4">Filtered Equipment View</h2>
+                <div class="mb-4 text-sm text-gray-600">This view shows the combined total quantity from the Central Store and Sub Store.</div>
+               <div class="flex items-end space-x-4 mb-4">
+                    <div class="flex-grow">
+                       <label for="equipment-search" class="block text-sm font-medium text-gray-700">Search Equipment</label>
+                       <input type="text" id="equipment-search" oninput="filterByEquipment()" placeholder="Start typing to filter..." class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                   </div>
+                   <div>
+                       <label for="equipment-select-view" class="block text-sm font-medium text-gray-700">Or Select</label>
+                       <select id="equipment-select-view" onchange="selectEquipmentFromDropdown('view')" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                           <!-- JS will populate this -->
+                       </select>
+                   </div>
+               </div>
+                <div class="table-container">
+                   <table class="min-w-full divide-y divide-gray-200">
+                       <thead class="bg-gray-50 sticky top-0">
+                           <tr>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Equipment</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Material Code</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Safety Stock</th>
+                               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Quantity</th>
+                           </tr>
+                       </thead>
+                       <tbody id="equipment-filter-body" class="bg-white divide-y divide-gray-200">
+                          <tr><td colspan="5" class="text-center py-4 text-gray-500">Search for or select an equipment to view inventory.</td></tr>
+                       </tbody>
+                   </table>
+               </div>
+           </div>
+       </div>
+   </div>
+
+   <!-- AI Modal -->
+   <div id="ai-modal" class="modal-overlay">
+       <div class="modal-content">
+           <div class="flex justify-between items-center mb-4">
+               <h3 class="text-xl font-semibold text-gray-900">✨ AI-Generated Reorder Plan</h3>
+               <button onclick="hideModal()" class="text-gray-400 hover:text-gray-600">×</button>
+           </div>
+           <div id="modal-body" class="text-gray-600"></div>
+       </div>
+   </div>
+
+   <script>
+       // --- DATA STORE ---
+       let masterData = [
+           { code: "MT-001", description: "1/2 inch Steel Bolt", category: "Fasteners", equipment: "Assembly Line 1", safetyStock: 200, quantity: { centralStore: 200, subStore: 50 } },
+           { code: "MT-002", description: "1/4 inch Steel Nut", category: "Fasteners", equipment: "Assembly Line 1", safetyStock: 200, quantity: { centralStore: 100, subStore: 50 } },
+           { code: "MT-003", description: "Lubricant Oil (5L)", category: "Consumables", equipment: "Maintenance Cart", safetyStock: 50, quantity: { centralStore: 40, subStore: 20 } },
+           { code: "MT-004", description: "Hydraulic Fluid (20L)", category: "Consumables", equipment: "Heavy Press A", safetyStock: 20, quantity: { centralStore: 10, subStore: 5 } },
+           { code: "MT-005", description: "Safety Gloves (Pair)", category: "PPE", equipment: "All Stations", safetyStock: 100, quantity: { centralStore: 80, subStore: 40 } },
+           { code: "MT-006", description: "Welding Rod (Box)", category: "Welding", equipment: "Fabrication Bay", safetyStock: 30, quantity: { centralStore: 15, subStore: 10 } },
+           { code: "MT-007", description: "Grinding Disc 7-inch", category: "Abrasives", equipment: "Fabrication Bay", safetyStock: 80, quantity: { centralStore: 60, subStore: 40 } },
+           { code: "MT-008", description: "Control Panel Screen", category: "Electronics", equipment: "Assembly Line 1", safetyStock: 10, quantity: { centralStore: 8, subStore: 4 } },
+           { code: "MT-009", description: "Sensor Cable 5m", category: "Electronics", equipment: "Heavy Press A", safetyStock: 25, quantity: { centralStore: 30, subStore: 10 } },
+           { code: "MT-010", description: "Cleaning Solvent (10L)", category: "Consumables", equipment: "Maintenance Cart", safetyStock: 40, quantity: { centralStore: 20, subStore: 10 } }
+       ];
+
+       // --- DOM ELEMENTS ---
+       const modal = document.getElementById('ai-modal');
+       const modalBody = document.getElementById('modal-body');
+
+       // --- APP INITIALIZATION ---
+       window.onload = () => {
+           renderUpdateUI('central', 'Central Store');
+           renderUpdateUI('sub', 'Sub Store');
+           populateEquipmentSelects();
+           renderMasterData();
+           filterByEquipment(); // Initialize equipment view
+           checkAllSafetyStocks();
+       };
+
+       // --- UI RENDERING ---
+       function renderUpdateUI(storeKey, storeName) {
+           const container = document.getElementById(`update-container-${storeKey}`);
+           container.innerHTML = `
+               <h2 class="text-xl font-semibold mb-6">Update ${storeName} Stock</h2>
+               <div id="update-status-${storeKey}" class="mb-4 text-center"></div>
+               <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   <div>
+                       <h3 class="text-lg font-medium mb-4 border-b pb-2">Manual Update</h3>
+                       <div class="space-y-4">
+                           <div>
+                               <label for="material-code-input-${storeKey}" class="block text-sm font-medium text-gray-700">Material Code</label>
+                               <input type="text" id="material-code-input-${storeKey}" oninput="handleMaterialCodeInput('${storeKey}')" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                           </div>
+                           <div>
+                               <label for="material-description-display-${storeKey}" class="block text-sm font-medium text-gray-700">Material Description</label>
+                               <div id="material-description-display-${storeKey}" class="mt-1 block w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md min-h-[42px]"></div>
+                           </div>
+                           <div>
+                               <label for="quantity-input-${storeKey}" class="block text-sm font-medium text-gray-700">New Quantity</label>
+                               <input type="number" id="quantity-input-${storeKey}" min="0" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                           </div>
+                           <button onclick="updateQuantity('${storeKey}')" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Update Quantity</button>
+                       </div>
+                   </div>
+                   <div>
+                       <h3 class="text-lg font-medium mb-4 border-b pb-2">Bulk Update via Sheet</h3>
+                       <div class="space-y-4">
+                           <div>
+                               <label for="file-input-${storeKey}" class="block text-sm font-medium text-gray-700">Upload Spreadsheet</label>
+                               <input type="file" id="file-input-${storeKey}" accept=".xlsx, .xls, .csv" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                               <p class="mt-1 text-xs text-gray-500">Sheet must have 'Material Code' and 'Quantity' columns.</p>
+                           </div>
+                           <button onclick="handleFileUpload(event, '${storeKey}')" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">Upload and Process</button>
+                       </div>
+                   </div>
+               </div>
+           `;
+       }
+
+       function renderMasterData() {
+           const tbody = document.getElementById('master-data-body');
+           tbody.innerHTML = '';
+           masterData.forEach(item => {
+               tbody.innerHTML += `
+                   <tr class="hover:bg-gray-50">
+     
